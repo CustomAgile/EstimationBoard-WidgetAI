@@ -11,6 +11,7 @@ import type { CardBoardColumn } from '@customagile/widget-ai/components/CardBoar
 import { AddNew } from '@customagile/widget-ai/components/AddNew';
 import { AppHeader } from '@customagile/widget-ai/components/AppHeader';
 import { EditModePanel, SettingRow } from '@customagile/widget-ai/components/EditModePanel';
+import { useDevHarness } from '@customagile/widget-ai/components/DevHarness';
 import { CheckboxGroup } from '@customagile/widget-ai/components/CheckboxGroup';
 import type { CheckboxGroupOption } from '@customagile/widget-ai/components/CheckboxGroup';
 import {
@@ -76,6 +77,7 @@ interface AppProps {
 type Overrides = Partial<Pick<EstimationBoardItem, 'Ready' | 'Blocked'>>;
 
 export default function App({ rallyContext, data }: AppProps) {
+  const dev = useDevHarness();
   const { settings, updateSetting, updateSettings } = useWidgetSettings<EstimationBoardSettingsShape>(
     rallyContext,
     SETTINGS_DEFAULTS,
@@ -149,7 +151,7 @@ export default function App({ rallyContext, data }: AppProps) {
           );
           setDraftSizes(null);
         }}
-        onClose={() => { /* Rally controls EditMode exit */ }}
+        onClose={() => dev?.setEditMode(false)}
       >
         <SettingRow label="Columns" settingKey="sizes">
           <SizesEditor value={draftSizes ?? sizes} onChange={setDraftSizes} />
