@@ -8,6 +8,7 @@ import type { RallyContext } from '@customagile/widget-ai/types/rally-context';
 import type { ArtifactTypeKey } from '@customagile/widget-ai/types/rally-registry';
 import { CardBoard } from '@customagile/widget-ai/components/CardBoard';
 import type { CardBoardColumn } from '@customagile/widget-ai/components/CardBoard';
+import type { FilterFieldDef } from '@customagile/widget-ai/components/filter/types';
 import { AddNew } from '@customagile/widget-ai/components/AddNew';
 import { AppHeader } from '@customagile/widget-ai/components/AppHeader';
 import { EditModePanel, SettingRow } from '@customagile/widget-ai/components/EditModePanel';
@@ -110,6 +111,38 @@ export default function App({ rallyContext, data }: AppProps) {
     () => items.map((item) => ({ ...item, ...(overrides[item.ObjectID] ?? {}) })),
     [items, overrides],
   );
+
+  // ── Filter fields ─────────────────────────────────────────────────
+  // Derive option lists from loaded items so multiselect chips reflect
+  // what's actually on the board.
+  const filterFields = useMemo<FilterFieldDef[]>(() => {
+    const types = Array.from(
+      new Set(items.map((i) => i._type).filter((t): t is string => !!t)),
+    ).sort();
+    const owners = Array.from(
+      new Set(
+        items
+          .map((i) => i.Owner?._refObjectName)
+          .filter((s): s is string => !!s),
+      ),
+    ).sort();
+    return [
+      { field: 'FormattedID', label: 'Formatted ID', type: 'text' },
+      { field: 'Name', label: 'Name', type: 'text' },
+      {
+        field: '_type',
+        label: 'Type',
+        type: 'multiselect',
+        config: { options: types },
+      },
+      {
+        field: 'Owner._refObjectName',
+        label: 'Owner',
+        type: 'multiselect',
+        config: { options: owners },
+      },
+    ];
+  }, [items]);
 
   // ── Event handlers ────────────────────────────────────────────────
   const toggleField = useCallback(
@@ -219,6 +252,10 @@ export default function App({ rallyContext, data }: AppProps) {
                 ? (settings.rowsField as keyof EstimationBoardItem & string)
                 : undefined
             }
+            filters={{
+              fields: filterFields,
+              searchPlaceholder: 'Search work items',
+            }}
           />
         </div>
       )}
