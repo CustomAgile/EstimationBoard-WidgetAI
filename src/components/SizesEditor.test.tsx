@@ -2,6 +2,8 @@
  * Copyright (c) 2026 Custom Agile LLC. All rights reserved.
  */
 
+/// <reference types="@testing-library/jest-dom" />
+
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import React from 'react';
