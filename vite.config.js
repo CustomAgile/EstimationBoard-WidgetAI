@@ -47,17 +47,27 @@ const rallyConfig = JSON.parse(readFileSync('./rally.config.json', 'utf-8'));
 const appVersion = (rallyConfig.version || '0.0.0') + '-' + (rallyConfig.build || 0);
 
 /**
- * Load auth.json for dev server proxy.
- * Create auth.json in this directory with:
- *   { "server": "https://rally1.rallydev.com", "apiKey": "your-api-key" }
+ * Load Rally credentials for the dev-server proxy.
+ *
+ * Source order (first non-empty value wins per field):
+ *   1. ./auth.json:  { "server": "https://rally1.rallydev.com", "apiKey": "..." }
+ *   2. Env vars:     RALLY_SERVER, RALLY_API_KEY
+ *
+ * Env vars are useful in CI or in shells where no auth.json is present.
  */
 function getAuth() {
+  let server = '';
+  let apiKey = '';
   try {
     if (existsSync('./auth.json')) {
-      return JSON.parse(readFileSync('./auth.json', 'utf-8'));
+      const j = JSON.parse(readFileSync('./auth.json', 'utf-8'));
+      server = j.server ?? '';
+      apiKey = j.apiKey ?? '';
     }
   } catch { /* ignore */ }
-  return { server: '', apiKey: '' };
+  if (!server) server = process.env.RALLY_SERVER ?? '';
+  if (!apiKey) apiKey = process.env.RALLY_API_KEY ?? '';
+  return { server, apiKey };
 }
 
 const auth = getAuth();
