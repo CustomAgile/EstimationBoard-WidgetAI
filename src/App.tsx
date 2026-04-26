@@ -19,7 +19,6 @@ import {
 
 import type { EstimationBoardDataProvider, EstimationBoardSettings, EstimationSize } from './types';
 import { useEstimationBoardData } from './hooks/useEstimationBoardData';
-import { EstimationCard } from './components/EstimationCard';
 import { SizesEditor } from './components/SizesEditor';
 
 // ── Type color stripe — token-aligned hex values ──────────────────────
@@ -131,16 +130,23 @@ export default function App({ rallyContext, data }: AppProps) {
     extraQuery,
   );
 
-  // Augment items with the string key for CardBoard's columnField
-  // and the type color hex for CardBoard's colorField (drives the left border stripe).
+  // ── Optimistic local overrides (Ready / Blocked toggles) ─────────────
+  const [localOverrides, setLocalOverrides] = useState<
+    Record<number, { Ready?: boolean; Blocked?: boolean }>
+  >({});
+
+  // Augment items with the string key for CardBoard's columnField,
+  // the type color hex for CardBoard's colorField (drives the left border stripe),
+  // and merged optimistic overrides for Ready/Blocked.
   const boardItems = useMemo(
     () =>
       items.map((item) => ({
         ...item,
+        ...(localOverrides[item.ObjectID] ?? {}),
         _planEstimateKey: planEstimateKey(item.PlanEstimate),
         _typeColor: getTypeColor(item._type),
       })),
-    [items],
+    [items, localOverrides],
   );
 
   // ── EditMode settings state (for SizesEditor) ──────────────────────
@@ -148,6 +154,30 @@ export default function App({ rallyContext, data }: AppProps) {
   const effectiveDraftSizes = draftSizes ?? sizes;
 
   // ── Event handlers ────────────────────────────────────────────────
+
+  const handleToggleReady = useCallback(
+    (item: (typeof boardItems)[number]) => {
+      const next = !(localOverrides[item.ObjectID]?.Ready ?? item.Ready);
+      setLocalOverrides((prev) => ({
+        ...prev,
+        [item.ObjectID]: { ...prev[item.ObjectID], Ready: next },
+      }));
+      data.updateItem(item._type as Parameters<typeof data.updateItem>[0], item.ObjectID, { Ready: next }).catch(() => {});
+    },
+    [data, localOverrides],
+  );
+
+  const handleToggleBlocked = useCallback(
+    (item: (typeof boardItems)[number]) => {
+      const next = !(localOverrides[item.ObjectID]?.Blocked ?? item.Blocked);
+      setLocalOverrides((prev) => ({
+        ...prev,
+        [item.ObjectID]: { ...prev[item.ObjectID], Blocked: next },
+      }));
+      data.updateItem(item._type as Parameters<typeof data.updateItem>[0], item.ObjectID, { Blocked: next }).catch(() => {});
+    },
+    [data, localOverrides],
+  );
 
   const handleCardMove = useCallback(
     async (
@@ -315,9 +345,8 @@ export default function App({ rallyContext, data }: AppProps) {
             columns={columns}
             columnField="_planEstimateKey"
             colorField="_typeColor"
-            renderCard={(item, isDragging) => (
-              <EstimationCard item={item} isDragging={isDragging} />
-            )}
+            onToggleReady={handleToggleReady}
+            onToggleBlocked={handleToggleBlocked}
             onCardMove={handleCardMove}
             swimLaneField={settings.showRows && settings.rowsField
               ? settings.rowsField as keyof (typeof boardItems)[number] & string
