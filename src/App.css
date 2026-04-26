@@ -1,0 +1,48 @@
+/** Copyright (c) 2026 Custom Agile LLC. All rights reserved. */
+
+.ca-eb-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  font-family: var(--ca-font-family);
+  background-color: var(--ca-surface-page);
+  color: var(--ca-text-primary);
+  overflow: hidden;
+}
+
+.ca-eb-addnew {
+  padding: var(--ca-space-2) var(--ca-space-2) 0;
+}
+
+.ca-eb-board {
+  flex: 1;
+  overflow: hidden;
+  padding: var(--ca-space-2);
+}
+
+.ca-eb-error {
+  margin: var(--ca-space-2);
+  padding: var(--ca-space-2);
+  background-color: var(--ca-status-red-bg);
+  color: var(--ca-status-red);
+  border-radius: var(--ca-radius-sm);
+  font-size: var(--ca-font-size-sm);
+}
+
+.ca-eb-loading {
+  padding: var(--ca-space-4);
+  text-align: center;
+  color: var(--ca-text-secondary);
+  font-size: var(--ca-font-size-sm);
+}
+
+.ca-eb-query-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 4px 8px;
+  font-size: var(--ca-font-size-sm);
+  color: var(--ca-text-primary);
+  background-color: var(--ca-surface-raised);
+  border: 1px solid var(--ca-border-default);
+  border-radius: var(--ca-radius-xs);
+}

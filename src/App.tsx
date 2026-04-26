@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo, useCallback } from 'react';
 import '@customagile/widget-ai/styles/rally-app-tokens.css';
+import './App.css';
 
 import type { RallyContext } from '@customagile/widget-ai/types/rally-context';
 import type { ArtifactTypeKey } from '@customagile/widget-ai/types/rally-registry';
@@ -17,25 +18,9 @@ import {
   defineWidgetSettings,
 } from '@customagile/widget-ai/components/settings';
 
-import type { EstimationBoardDataProvider, EstimationBoardSettings, EstimationSize } from './types';
+import type { EstimationBoardDataProvider, EstimationBoardItem, EstimationSize } from './types';
 import { useEstimationBoardData } from './hooks/useEstimationBoardData';
 import { SizesEditor } from './components/SizesEditor';
-
-// ── Type color stripe — token-aligned hex values ──────────────────────
-// These match the palette in RallyCard's TYPE_INFO and the card tokens.
-// Used as the `_typeColor` field fed to CardBoard's colorField prop.
-const TYPE_COLOR: Record<string, string> = {
-  hierarchicalrequirement: '#4a90d9',
-  userstory:               '#4a90d9',
-  defect:                  '#f44336',
-  defectsuite:             '#e67e22',
-  task:                    '#00a89d',
-  testcase:                '#8dc63f',
-};
-
-function getTypeColor(type: string): string {
-  return TYPE_COLOR[type.toLowerCase()] ?? '#6B7280';
-}
 
 // ── Constants ─────────────────────────────────────────────────────────
 
@@ -60,13 +45,16 @@ const TYPE_OPTIONS: CheckboxGroupOption[] = [
   { value: 'defectsuite', label: 'Defect Suite' },
 ];
 
-const SETTINGS_DEFAULTS = defineWidgetSettings<EstimationBoardSettings>({
+const SETTINGS_DEFAULTS = defineWidgetSettings<EstimationBoardSettingsShape>({
   sizes: JSON.stringify(DEFAULT_SIZES),
   showRows: false,
   rowsField: '',
   types: DEFAULT_TYPES,
   query: '',
 });
+
+// Local alias to avoid an extra type-import line.
+type EstimationBoardSettingsShape = import('./types').EstimationBoardSettings;
 
 // ── Helpers ────────────────────────────────────────────────────────────
 
@@ -78,24 +66,6 @@ function parseSizes(raw: string): EstimationSize[] {
   return DEFAULT_SIZES;
 }
 
-/** Convert EstimationSize[] → CardBoardColumn[] */
-function sizesToColumns(sizes: EstimationSize[]): CardBoardColumn[] {
-  return sizes.map((s) => ({
-    value: s.value === null ? '' : String(s.value),
-    label: s.text,
-  }));
-}
-
-/**
- * Normalize PlanEstimate for CardBoard columnField comparison.
- * CardBoard compares item[columnField] as a string to column.value.
- * We store a computed string field '_planEstimateKey' for this purpose.
- */
-function planEstimateKey(pe: number | null | undefined): string {
-  if (pe === null || pe === undefined) return '';
-  return String(pe);
-}
-
 // ── App component ──────────────────────────────────────────────────────
 
 interface AppProps {
@@ -103,16 +73,20 @@ interface AppProps {
   data: EstimationBoardDataProvider;
 }
 
+type Overrides = Partial<Pick<EstimationBoardItem, 'Ready' | 'Blocked'>>;
+
 export default function App({ rallyContext, data }: AppProps) {
-  // ── Settings ───────────────────────────────────────────────────────
-  const { settings, updateSetting, updateSettings } = useWidgetSettings<EstimationBoardSettings>(
+  const { settings, updateSetting, updateSettings } = useWidgetSettings<EstimationBoardSettingsShape>(
     rallyContext,
     SETTINGS_DEFAULTS,
   );
 
   // ── Derived settings ───────────────────────────────────────────────
   const sizes = useMemo(() => parseSizes(settings.sizes), [settings.sizes]);
-  const columns: CardBoardColumn[] = useMemo(() => sizesToColumns(sizes), [sizes]);
+  const columns: CardBoardColumn[] = useMemo(
+    () => sizes.map((s) => ({ value: s.value === null ? '' : String(s.value), label: s.text })),
+    [sizes],
+  );
   const activeTypes = useMemo(
     () =>
       (settings.types ?? DEFAULT_TYPES).filter(
@@ -122,83 +96,45 @@ export default function App({ rallyContext, data }: AppProps) {
     [settings.types],
   );
 
-  // ── Data ───────────────────────────────────────────────────────────
-  const extraQuery = settings.query || null;
+  // ── Data + optimistic Ready/Blocked overrides ─────────────────────
   const { items, loading, error, refresh } = useEstimationBoardData(
     data,
     activeTypes,
-    extraQuery,
+    settings.query || null,
   );
+  const [overrides, setOverrides] = useState<Record<number, Overrides>>({});
 
-  // ── Optimistic local overrides (Ready / Blocked toggles) ─────────────
-  const [localOverrides, setLocalOverrides] = useState<
-    Record<number, { Ready?: boolean; Blocked?: boolean }>
-  >({});
-
-  // Augment items with the string key for CardBoard's columnField,
-  // the type color hex for CardBoard's colorField (drives the left border stripe),
-  // and merged optimistic overrides for Ready/Blocked.
   const boardItems = useMemo(
-    () =>
-      items.map((item) => ({
-        ...item,
-        ...(localOverrides[item.ObjectID] ?? {}),
-        _planEstimateKey: planEstimateKey(item.PlanEstimate),
-        _typeColor: getTypeColor(item._type),
-      })),
-    [items, localOverrides],
+    () => items.map((item) => ({ ...item, ...(overrides[item.ObjectID] ?? {}) })),
+    [items, overrides],
   );
-
-  // ── EditMode settings state (for SizesEditor) ──────────────────────
-  const [draftSizes, setDraftSizes] = useState<EstimationSize[] | null>(null);
-  const effectiveDraftSizes = draftSizes ?? sizes;
 
   // ── Event handlers ────────────────────────────────────────────────
-
-  const handleToggleReady = useCallback(
-    (item: (typeof boardItems)[number]) => {
-      const next = !(localOverrides[item.ObjectID]?.Ready ?? item.Ready);
-      setLocalOverrides((prev) => ({
+  const toggleField = useCallback(
+    (field: 'Ready' | 'Blocked') => (item: EstimationBoardItem) => {
+      const next = !(overrides[item.ObjectID]?.[field] ?? item[field]);
+      setOverrides((prev) => ({
         ...prev,
-        [item.ObjectID]: { ...prev[item.ObjectID], Ready: next },
+        [item.ObjectID]: { ...prev[item.ObjectID], [field]: next },
       }));
-      data.updateItem(item._type as Parameters<typeof data.updateItem>[0], item.ObjectID, { Ready: next }).catch(() => {});
+      data.updateItem(item._type as ArtifactTypeKey, item.ObjectID, { [field]: next })
+        .catch(() => {});
     },
-    [data, localOverrides],
-  );
-
-  const handleToggleBlocked = useCallback(
-    (item: (typeof boardItems)[number]) => {
-      const next = !(localOverrides[item.ObjectID]?.Blocked ?? item.Blocked);
-      setLocalOverrides((prev) => ({
-        ...prev,
-        [item.ObjectID]: { ...prev[item.ObjectID], Blocked: next },
-      }));
-      data.updateItem(item._type as Parameters<typeof data.updateItem>[0], item.ObjectID, { Blocked: next }).catch(() => {});
-    },
-    [data, localOverrides],
+    [data, overrides],
   );
 
   const handleCardMove = useCallback(
-    async (
-      item: (typeof boardItems)[number],
-      _fromColumn: string,
-      toColumn: string,
-    ) => {
-      const newValue = toColumn === '' ? null : Number(toColumn);
+    async (item: EstimationBoardItem, _from: string, to: string) => {
       await data.updateItem(item._type as ArtifactTypeKey, item.ObjectID, {
-        PlanEstimate: newValue,
+        PlanEstimate: to === '' ? null : Number(to),
       });
       refresh();
     },
     [data, refresh],
   );
 
-  const handleAddNewCreate = useCallback(() => {
-    refresh();
-  }, [refresh]);
-
-  // ── EditMode render ────────────────────────────────────────────────
+  // ── EditMode ──────────────────────────────────────────────────────
+  const [draftSizes, setDraftSizes] = useState<EstimationSize[] | null>(null);
 
   if (rallyContext.isEditMode) {
     return (
@@ -207,57 +143,35 @@ export default function App({ rallyContext, data }: AppProps) {
         version="1.0.1"
         appSlug="estimation-board"
         settings={settings as unknown as Record<string, unknown>}
-        onSave={(dirty: Partial<EstimationBoardSettings>) => {
-          if (draftSizes !== null) {
-            updateSettings({
-              ...dirty,
-              sizes: JSON.stringify(draftSizes),
-            });
-            setDraftSizes(null);
-          } else {
-            updateSettings(dirty);
-          }
+        onSave={(dirty: Partial<EstimationBoardSettingsShape>) => {
+          updateSettings(
+            draftSizes !== null ? { ...dirty, sizes: JSON.stringify(draftSizes) } : dirty,
+          );
+          setDraftSizes(null);
         }}
         onClose={() => { /* Rally controls EditMode exit */ }}
       >
-        {/* Columns (sizes) editor */}
         <SettingRow label="Columns" settingKey="sizes">
-          <SizesEditor
-            value={effectiveDraftSizes}
-            onChange={(next) => setDraftSizes(next)}
-          />
+          <SizesEditor value={draftSizes ?? sizes} onChange={setDraftSizes} />
         </SettingRow>
 
-        {/* Artifact types */}
         <SettingRow label="Artifact Types" settingKey="types">
           <CheckboxGroup
             legend="Types to show"
             options={TYPE_OPTIONS}
             value={activeTypes}
-            onChange={(vals) =>
-              updateSetting('types', vals as ArtifactTypeKey[])
-            }
+            onChange={(vals) => updateSetting('types', vals as ArtifactTypeKey[])}
             orientation="horizontal"
           />
         </SettingRow>
 
-        {/* Query filter */}
         <SettingRow label="Additional Filter" settingKey="query">
           <input
             type="text"
             value={settings.query}
             onChange={(e) => updateSetting('query', e.target.value)}
             placeholder='e.g. (Owner.UserName = "jsmith")'
-            style={{
-              width: '100%',
-              boxSizing: 'border-box',
-              padding: '4px 8px',
-              fontSize: 'var(--ca-font-size-sm)',
-              color: 'var(--ca-text-primary)',
-              backgroundColor: 'var(--ca-surface-raised)',
-              border: '1px solid var(--ca-border-default)',
-              borderRadius: 'var(--ca-radius-xs)',
-            }}
+            className="ca-eb-query-input"
           />
         </SettingRow>
       </EditModePanel>
@@ -265,19 +179,8 @@ export default function App({ rallyContext, data }: AppProps) {
   }
 
   // ── Normal view ────────────────────────────────────────────────────
-
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        height: '100%',
-        fontFamily: 'var(--ca-font-family)',
-        backgroundColor: 'var(--ca-surface-page)',
-        color: 'var(--ca-text-primary)',
-        overflow: 'hidden',
-      }}
-    >
+    <div className="ca-eb-shell">
       <AppHeader
         title="Estimation Board"
         help={{
@@ -287,70 +190,33 @@ export default function App({ rallyContext, data }: AppProps) {
                 The Estimation Board groups user stories, defects, and defect suites by their
                 Plan Estimate. Drag cards between columns to update estimates.
               </p>
-              <p>
-                Use Edit Mode to configure column sizes, artifact types, and optional filters.
-              </p>
+              <p>Use Edit Mode to configure column sizes, artifact types, and optional filters.</p>
             </>
           ),
         }}
       />
 
-      {/* AddNew bar */}
-      <div style={{ padding: 'var(--ca-space-2) var(--ca-space-2) 0' }}>
-        <AddNew
-          recordTypes={activeTypes}
-          collapseOnCreate
-          onCreate={handleAddNewCreate}
-        />
+      <div className="ca-eb-addnew">
+        <AddNew recordTypes={activeTypes} collapseOnCreate onCreate={refresh} />
       </div>
 
-      {/* Error state */}
-      {error && (
-        <div
-          role="alert"
-          style={{
-            margin: 'var(--ca-space-2)',
-            padding: 'var(--ca-space-2)',
-            backgroundColor: 'var(--ca-status-red-bg)',
-            color: 'var(--ca-status-red)',
-            borderRadius: 'var(--ca-radius-sm)',
-            fontSize: 'var(--ca-font-size-sm)',
-          }}
-        >
-          ⚠ Error loading items: {error}
-        </div>
-      )}
+      {error && <div role="alert" className="ca-eb-error">⚠ Error loading items: {error}</div>}
+      {loading && <div aria-live="polite" aria-busy="true" className="ca-eb-loading">Loading…</div>}
 
-      {/* Loading state */}
-      {loading && (
-        <div
-          aria-live="polite"
-          aria-busy="true"
-          style={{
-            padding: 'var(--ca-space-4)',
-            textAlign: 'center',
-            color: 'var(--ca-text-secondary)',
-            fontSize: 'var(--ca-font-size-sm)',
-          }}
-        >
-          Loading…
-        </div>
-      )}
-
-      {/* Board */}
       {!loading && (
-        <div style={{ flex: 1, overflow: 'hidden', padding: 'var(--ca-space-2)' }}>
-          <CardBoard<(typeof boardItems)[number]>
+        <div className="ca-eb-board">
+          <CardBoard<EstimationBoardItem>
             items={boardItems}
             columns={columns}
-            columnField="_planEstimateKey"
-            colorField="_typeColor"
-            onToggleReady={handleToggleReady}
-            onToggleBlocked={handleToggleBlocked}
+            columnField="PlanEstimate"
+            onToggleReady={toggleField('Ready')}
+            onToggleBlocked={toggleField('Blocked')}
             onCardMove={handleCardMove}
-            swimLaneField={settings.showRows && settings.rowsField
-              ? settings.rowsField as keyof (typeof boardItems)[number] & string
-              : undefined}
+            swimLaneField={
+              settings.showRows && settings.rowsField
+                ? (settings.rowsField as keyof EstimationBoardItem & string)
+                : undefined
+            }
           />
         </div>
       )}
