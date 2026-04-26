@@ -2,15 +2,13 @@
  * Vite configuration for Estimation Board.
  *
  * Dev server: npm run dev
- *   - Proxies /slm/* to Rally (requires auth.json in project root)
- *   - Defaults to mock data unless ?live=true
+ *   - Proxies /slm/* (WSAPI) and /analytics/* (LBAPI) to Rally
+ *     (requires auth.json in project root)
+ *   - Always runs against live Rally data — no mock branch
  *
  * Production build: npm run build
  *   - Outputs IIFE bundle to dist/app.js
  *   - React loaded from CDN (not bundled)
- *
- * Mock build: npm run build:mock
- *   - Same as production but __USE_MOCK__ is hardcoded to true
  */
 
 import { defineConfig } from 'vite';
@@ -77,13 +75,6 @@ export default defineConfig({
 
   define: {
     __APP_VERSION__: JSON.stringify(appVersion),
-    // Compile-time mock flag.
-    // 'true'  → always use mock data (npm run build:mock)
-    // 'false' → always use live Rally data (npm run build)
-    // unset   → runtime: mock unless ?live=true (dev server default)
-    __USE_MOCK__: process.env.VITE_USE_MOCK !== undefined
-      ? process.env.VITE_USE_MOCK === 'true'
-      : undefined,
   },
 
   build: {
@@ -112,8 +103,8 @@ export default defineConfig({
   server: {
     open: false,
     port: 5173,
-    proxy: auth.server ? {
-      '/slm': {
+    proxy: auth.server ? (() => {
+      const proxyEntry = {
         target: auth.server,
         changeOrigin: true,
         headers: {
@@ -121,7 +112,10 @@ export default defineConfig({
           'Accept': 'application/json',
           'Content-Type': 'application/json',
         },
-      },
-    } : undefined,
+      };
+      // /slm/*       — WSAPI + Rally chrome (avatars, profile images)
+      // /analytics/* — LBAPI (Lookback / snapshot store)
+      return { '/slm': proxyEntry, '/analytics': proxyEntry };
+    })() : undefined,
   },
 });

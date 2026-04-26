@@ -1,28 +1,31 @@
 /** Copyright (c) 2026 Custom Agile LLC. All rights reserved. */
 
 import { createRoot } from 'react-dom/client';
-import React from 'react';
+import React, { useMemo } from 'react';
 import { DEFAULT_RALLY_CONTEXT } from '@customagile/widget-ai/types/rally-context';
 import type { RallyContext } from '@customagile/widget-ai/types/rally-context';
+import { DevHarness } from '@customagile/widget-ai/components/DevHarness';
 import App from './App';
-import { mockProvider, mockContext } from './mock-data';
 import { createRallyProvider } from './data-provider';
 
-// Required: tell TypeScript about compile-time and runtime globals.
-declare const __USE_MOCK__: boolean | undefined;
 declare const $RallyContext: RallyContext | undefined;
 
-const useMock = typeof __USE_MOCK__ !== 'undefined' ? __USE_MOCK__ : true;
+// In Rally, $RallyContext is injected by the Custom HTML Widget iframe.
+// In local dev, fall back to DEFAULT_RALLY_CONTEXT and let DevHarness
+// pick the active project against the live Rally server (via the
+// Vite dev-server proxy + auth.json).
+const initialContext: RallyContext =
+  typeof $RallyContext !== 'undefined' ? $RallyContext : DEFAULT_RALLY_CONTEXT;
 
-// Live branch: use $RallyContext injected by the Rally Custom HTML Widget iframe.
-// Mock branch: use synthetic mockContext for local dev.
-// App NEVER imports mock-data or data-provider directly — only main.tsx does.
-const rallyContext: RallyContext = (!useMock && typeof $RallyContext !== 'undefined')
-  ? $RallyContext
-  : useMock ? mockContext : DEFAULT_RALLY_CONTEXT;
-
-const data = useMock ? mockProvider : createRallyProvider(rallyContext);
+function AppHost({ ctx }: { ctx: RallyContext }) {
+  // Rebuild the provider whenever the harness changes the context so
+  // live data reflects the new project scope.
+  const data = useMemo(() => createRallyProvider(ctx), [ctx]);
+  return <App rallyContext={ctx} data={data} />;
+}
 
 createRoot(document.getElementById('root')!).render(
-  <App rallyContext={rallyContext} data={data} />,
+  <DevHarness initialContext={initialContext}>
+    {(ctx) => <AppHost ctx={ctx} />}
+  </DevHarness>,
 );
